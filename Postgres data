@@ -1,0 +1,127 @@
+-- Drop tables using CASCADE to remove dependent objects first
+-- This is the solution to the error you received
+DROP TABLE IF EXISTS employee_skills CASCADE;
+DROP TABLE IF EXISTS employee_certifications CASCADE;
+DROP TABLE IF EXISTS client_requirements CASCADE;
+DROP TABLE IF EXISTS certifications CASCADE;
+DROP TABLE IF EXISTS skills CASCADE;
+DROP TABLE IF EXISTS employees CASCADE;
+DROP TABLE IF EXISTS clients CASCADE;
+
+-- Create the tables as before
+CREATE TABLE employees (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    role VARCHAR(255),
+    experience_years INTEGER,
+    performance_score INTEGER DEFAULT 0
+);
+CREATE TABLE skills (
+    id SERIAL PRIMARY KEY,
+    skill_name VARCHAR(255) UNIQUE NOT NULL
+);
+CREATE TABLE certifications (
+    id SERIAL PRIMARY KEY,
+    certification_name VARCHAR(255) UNIQUE NOT NULL
+);
+CREATE TABLE clients (
+    id SERIAL PRIMARY KEY,
+    client_name VARCHAR(255) UNIQUE NOT NULL
+);
+CREATE TABLE employee_skills (
+    employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+    skill_id INTEGER REFERENCES skills(id) ON DELETE CASCADE,
+    PRIMARY KEY (employee_id, skill_id)
+);
+CREATE TABLE employee_certifications (
+    employee_id INTEGER REFERENCES employees(id) ON DELETE CASCADE,
+    certification_id INTEGER REFERENCES certifications(id) ON DELETE CASCADE,
+    PRIMARY KEY (employee_id, certification_id)
+);
+-- Create a table to store client skill and cert requirements
+CREATE TABLE client_requirements (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    skill_id INTEGER REFERENCES skills(id) ON DELETE CASCADE,
+    certification_id INTEGER REFERENCES certifications(id) ON DELETE CASCADE
+    -- The composite key was removed to allow NULL values
+);
+
+-- Insert sample employees
+INSERT INTO employees (name, role, experience_years, performance_score) VALUES
+('John Doe', 'Senior Agent', 5, 95),
+('Jane Smith', 'Junior Agent', 2, 88),
+('Peter Jones', 'Senior Agent', 7, 98),
+('Mary Williams', 'Mid-Level Agent', 4, 92);
+
+-- Insert sample skills
+INSERT INTO skills (skill_name) VALUES
+('Python'),
+('JavaScript'),
+('PostgreSQL'),
+('Customer Service'),
+('Project Management'),
+('Data Analysis');
+
+-- Insert sample certifications
+INSERT INTO certifications (certification_name) VALUES
+('PMP'),
+('CompTIA A+'),
+('AWS Certified Cloud Practitioner'),
+('Certified ScrumMaster');
+
+-- Insert sample clients
+INSERT INTO clients (client_name) VALUES
+('Alpha Corp'),
+('Beta Inc.');
+
+-- Assign skills and certifications to employees as before
+INSERT INTO employee_skills (employee_id, skill_id) VALUES
+(1, 1), (1, 3), (1, 4), -- John: Python, PostgreSQL, Customer Service
+(2, 2), (2, 4), -- Jane: JavaScript, Customer Service
+(3, 1), (3, 2), (3, 3), (3, 5), -- Peter: Python, JavaScript, PostgreSQL, Project Management
+(4, 3), (4, 4), (4, 6); -- Mary: PostgreSQL, Customer Service, Data Analysis
+
+INSERT INTO employee_certifications (employee_id, certification_id) VALUES
+(1, 3), -- John: AWS
+(3, 1), (3, 2); -- Peter: PMP, CompTIA A+
+
+-- Assign requirements to sample clients to show how it's done
+-- Alpha Corp needs Python and PMP
+INSERT INTO client_requirements (client_id, skill_id, certification_id)
+VALUES
+((SELECT id FROM clients WHERE client_name = 'Alpha Corp'), (SELECT id FROM skills WHERE skill_name = 'Python'), NULL),
+((SELECT id FROM clients WHERE client_name = 'Alpha Corp'), NULL, (SELECT id FROM certifications WHERE certification_name = 'PMP'));
+
+-- Example of a single query to find the best agent for 'Alpha Corp'
+-- This query counts how many of the desired skills and certifications each employee has
+-- and orders them to find the best match.
+SELECT
+    e.name,
+    e.role,
+    e.experience_years,
+    e.performance_score,
+    COUNT(DISTINCT es.skill_id) AS matching_skills,
+    COUNT(DISTINCT ec.certification_id) AS matching_certs,
+    (COUNT(DISTINCT es.skill_id) * 10 + COUNT(DISTINCT ec.certification_id) * 20) AS match_score
+FROM
+    employees AS e
+LEFT JOIN
+    employee_skills AS es ON e.id = es.employee_id
+LEFT JOIN
+    employee_certifications AS ec ON e.id = ec.employee_id
+LEFT JOIN
+    skills AS s ON es.skill_id = s.id
+LEFT JOIN
+    certifications AS c ON ec.certification_id = c.id
+LEFT JOIN
+    client_requirements AS cr ON (s.id = cr.skill_id OR c.id = cr.certification_id)
+WHERE
+    cr.client_id = (SELECT id FROM clients WHERE client_name = 'Alpha Corp')
+GROUP BY
+    e.id
+ORDER BY
+    match_score DESC,
+    e.performance_score DESC,
+    e.experience_years DESC
+LIMIT 1;
